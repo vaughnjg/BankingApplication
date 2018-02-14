@@ -1,1 +1,1 @@
-# HearthstoneAI
+# Banking Application
