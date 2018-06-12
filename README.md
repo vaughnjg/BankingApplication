@@ -1,1 +1,1 @@
-# Banking Application
+# Starcraft 2 Bot
