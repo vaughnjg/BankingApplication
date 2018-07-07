@@ -1,28 +1,51 @@
 #include <sc2api/sc2_api.h>
 #include "sc2lib/sc2_lib.h"
 #include <iterator>
-
 #include <iostream>
 
 using namespace sc2;
 
+struct IsStructure {
+    IsStructure(const ObservationInterface* obs) : observation_(obs) {};
+
+    bool operator()(const Unit& unit) {
+        auto& attributes = observation_->GetUnitTypeData().at(unit.unit_type).attributes;
+        bool is_structure = false;
+        for (const auto& attribute : attributes) {
+            if (attribute == Attribute::Structure) {
+                is_structure = true;
+            }
+        }
+        return is_structure;
+    }
+
+    const ObservationInterface* observation_;
+};
+
 class Bot : public Agent {
 public:
+    const ObservationInterface* observation = Observation();
+    std::vector<Point3D> expansions_;
+    Point3D startLocation_;
+    
 
     virtual void OnGameStart() final {
         std::cout << "Game Started." << std::endl;
-        
+        expansions_ = search::CalculateExpansionLocations(Observation(), Query());
+        startLocation_ = Observation()->GetStartLocation();
     }
 
     virtual void OnStep() final {
         TryBuildSupplyDepot();
         TryBuildVespeneGas();
         TryBuildBarracks();
-        TryBuildFactory();
-        TryBuildStarPort();
-        //TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-        TryBuildEngineerBay();
-        TryBuildArmory();
+        TryAddOn();
+        //TryBuildFactory();
+       // TryBuildStarPort();
+       // TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
+       // TryBuildEngineerBay();
+        //TryBuildArmory();
+        //TryBuildRaxReact();
     }
 
     virtual void OnUnitIdle(const Unit* unit) final {
@@ -46,7 +69,7 @@ public:
         }
         case UNIT_TYPEID::TERRAN_BARRACKS: {
             
-            Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+            //Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
             break;
         }
         case UNIT_TYPEID::TERRAN_MARINE: {
@@ -54,7 +77,7 @@ public:
             float ry = GetRandomScalar();
 
             const GameInfo& game_info = Observation()->GetGameInfo();
-            Actions()->UnitCommand(unit, ABILITY_ID::MOVE, Point2D(rx * 15.0f,ry * 15.0f));
+            Actions()->UnitCommand(unit, ABILITY_ID::MOVE, Point2D(rx * 10.0f,ry * 10.0f));
             if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) > 20) {
                 Actions()->UnitCommand(unit, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
             }
@@ -74,12 +97,43 @@ public:
             break;
         }
         }
-
     }
+
 private:
 
     size_t CountUnitType(UNIT_TYPEID unit_type) {
         return Observation()->GetUnits(Unit::Alliance::Self, IsUnit(unit_type)).size();
+    }
+    void TryAddOn() {
+        const ObservationInterface* observation = Observation();
+
+        Units bases = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+        Units barracks = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKS));
+        Units factorys = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORY));
+        Units starports = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORT));
+        Units raxTech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB));
+        Units portTech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORTTECHLAB));
+        Units factTech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB));
+        Units supply_depots = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT));
+
+        for (const auto& supply_depot : supply_depots) {
+            Actions()->UnitCommand(supply_depot, ABILITY_ID::MORPH_SUPPLYDEPOT_LOWER);
+        }
+
+        for (const auto& barrack : barracks) {
+            if (!barrack->orders.empty() || barrack->build_progress != 1) {
+                continue;
+            }
+
+            if (observation->GetUnit(barrack->add_on_tag) == nullptr) {
+                if (raxTech.empty()) {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_TECHLAB_BARRACKS, barrack->tag);
+                }
+                else {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_REACTOR_BARRACKS, barrack->tag);
+                }
+            }
+        }
     }
     bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location) {
         const ObservationInterface* observation = Observation();
@@ -127,17 +181,17 @@ private:
 
         if (ability_type_for_structure == ABILITY_ID::BUILD_REFINERY)
         {
-            const Unit* vespene_target = FindNearestVespeneGas(unit_to_build->pos);
+           const Unit* vespene_target = FindNearestVespeneGas(unit_to_build->pos);
             Actions()->UnitCommand(unit_to_build, ability_type_for_structure, vespene_target);
             return true;
         }
 
-      //  if (ability_type_for_structure == ABILITY_ID::BUILD_COMMANDCENTER){
-         //   Point3D close_exp = FindClosestExpansion(ABILITY_ID::BUILD_COMMANDCENTER);
+        //if (ability_type_for_structure == ABILITY_ID::BUILD_COMMANDCENTER){
+            //Point3D close_exp = FindClosestExpansion(ABILITY_ID::BUILD_COMMANDCENTER);
             
-         //   Actions()->UnitCommand(unit_to_build, ability_type_for_structure, Point2D(close_exp));
-           // return true;
-       // }
+          //  Actions()->UnitCommand(unit_to_build, ability_type_for_structure, Point2D(close_exp));
+            //return true;
+     //   }
         float rx = GetRandomScalar();
         float ry = GetRandomScalar();
 
@@ -197,13 +251,17 @@ private:
         }
         return target;
     }
-    const ObservationInterface* observation = Observation();
-    std::vector<Point3D> expansions_ = search::CalculateExpansionLocations(Observation(), Query());
-    Point3D startLocation_ = Observation()->GetStartLocation();
+
     bool TryExpand(AbilityID build_ability, UnitTypeID worker_type) {
-        
-        //Point3D staging_location_ = startLocation_;
         const ObservationInterface* observation = Observation();
+        Units bases = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+        if (bases.size() > 3) {
+            return false;
+        }
+        //Point3D staging_location_ = startLocation_;
+        //const ObservationInterface* observation = Observation();
+        //std::vector<Point3D> expansions_ = search::CalculateExpansionLocations(Observation(), Query());
+      //  Point3D startLocation_ = Observation()->GetStartLocation();
         float min_distance = std::numeric_limits<float>::max();
         
         Point3D closest_expansion;
@@ -263,7 +321,56 @@ private:
     bool TryBuildCC() {
         return TryBuildStructure(ABILITY_ID::BUILD_COMMANDCENTER);
     }
+    bool TryBuildRaxReact() {
+        return TryBuildStructure(ABILITY_ID::BUILD_REACTOR_BARRACKS);
+    }
+    bool TryBuildRaxTech(ABILITY_ID ability_type_for_structure, Tag base_structure) {
 
+        float rx = GetRandomScalar();
+        float ry = GetRandomScalar();
+        const Unit* unit = Observation()->GetUnit(base_structure);
+
+        if (unit->build_progress != 1) {
+            return false;
+        }
+
+        Point2D build_location = Point2D(unit->pos.x + rx * 15, unit->pos.y + ry * 15);
+
+        Units units = Observation()->GetUnits(Unit::Self, IsStructure(Observation()));
+
+        if (Query()->Placement(ability_type_for_structure, unit->pos, unit)) {
+            Actions()->UnitCommand(unit, ability_type_for_structure);
+            return true;
+        }
+
+        float distance = std::numeric_limits<float>::max();
+        for (const auto& u : units) {
+            float d = Distance2D(u->pos, build_location);
+            if (d < distance) {
+                distance = d;
+            }
+        }
+        if (distance < 6) {
+            return false;
+        }
+        if (Query()->Placement(ability_type_for_structure, build_location, unit)) {
+            Actions()->UnitCommand(unit, ability_type_for_structure, build_location);
+            return true;
+        }
+        return false;
+    }
+    bool TryBuildPortReact() {
+        return TryBuildStructure(ABILITY_ID::BUILD_REACTOR_STARPORT);
+    }
+    bool TryBuildPortTech() {
+        return TryBuildStructure(ABILITY_ID::BUILD_TECHLAB_STARPORT);
+    }
+    bool TryBuildFactReact() {
+        return TryBuildStructure(ABILITY_ID::BUILD_REACTOR_FACTORY);
+    }
+    bool TryBuildFactTech() {
+        return TryBuildStructure(ABILITY_ID::BUILD_TECHLAB_FACTORY);
+    }
 };
 
 int main(int argc, char* argv[]) {
