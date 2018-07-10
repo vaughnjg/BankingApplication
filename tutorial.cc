@@ -27,12 +27,13 @@ public:
     const ObservationInterface* observation = Observation();
     std::vector<Point3D> expansions_;
     Point3D startLocation_;
-    
+    Point3D staging_location_;
 
     virtual void OnGameStart() final {
         std::cout << "Game Started." << std::endl;
         expansions_ = search::CalculateExpansionLocations(Observation(), Query());
         startLocation_ = Observation()->GetStartLocation();
+        staging_location_ = startLocation_;
     }
 
     virtual void OnStep() final {
@@ -40,12 +41,13 @@ public:
         TryBuildVespeneGas();
         TryBuildBarracks();
         TryAddOn();
-        //TryBuildFactory();
-       // TryBuildStarPort();
-       // TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-       // TryBuildEngineerBay();
-        //TryBuildArmory();
+        TryBuildFactory();
+        TryBuildStarPort();
+        TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
+        TryBuildEngineerBay();
+        TryBuildArmory();
         //TryBuildRaxReact();
+        delegateWorkers(UNIT_TYPEID::TERRAN_SCV, ABILITY_ID::HARVEST_GATHER_SCV, UNIT_TYPEID::TERRAN_REFINERY);
     }
 
     virtual void OnUnitIdle(const Unit* unit) final {
@@ -68,8 +70,8 @@ public:
             break;
         }
         case UNIT_TYPEID::TERRAN_BARRACKS: {
-            
-            //Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+            TryAddOn();
+            Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
             break;
         }
         case UNIT_TYPEID::TERRAN_MARINE: {
@@ -77,20 +79,34 @@ public:
             float ry = GetRandomScalar();
 
             const GameInfo& game_info = Observation()->GetGameInfo();
-            Actions()->UnitCommand(unit, ABILITY_ID::MOVE, Point2D(rx * 10.0f,ry * 10.0f));
-            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) > 20) {
+            Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) > 50) {
                 Actions()->UnitCommand(unit, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
             }
             break;
         }
         case UNIT_TYPEID::TERRAN_STARPORT: {
-
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MEDIVAC) >= 5) {
+                break;
+            }
+            TryAddOn();
             Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MEDIVAC);
             break;
         }
+        case UNIT_TYPEID::TERRAN_MEDIVAC: {
+            Actions()->UnitCommand(unit, ABILITY_ID::MOVE, staging_location_);
+            break;
+        }
         case UNIT_TYPEID::TERRAN_FACTORY: {
-
-            //Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_WIDOWMINE);
+            if (CountUnitType(UNIT_TYPEID::TERRAN_SIEGETANK) >= 5) {
+                break;
+            }
+            TryAddOn();
+            Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SIEGETANK);
+            break;
+        }
+        case UNIT_TYPEID::TERRAN_SIEGETANK: {
+            Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
             break;
         }
         default: {
@@ -131,6 +147,34 @@ private:
                 }
                 else {
                     TryBuildRaxTech(ABILITY_ID::BUILD_REACTOR_BARRACKS, barrack->tag);
+                }
+            }
+        }
+        for (const auto& factory : factorys) {
+            if (!factory->orders.empty() || factory->build_progress != 1) {
+                continue;
+            }
+
+            if (observation->GetUnit(factory->add_on_tag) == nullptr) {
+                if (factTech.empty()) {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_TECHLAB_FACTORY, factory->tag);
+                }
+                else {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_REACTOR_FACTORY, factory->tag);
+                }
+            }
+        }
+        for (const auto& starport : starports) {
+            if (!starport->orders.empty() || starport->build_progress != 1) {
+                continue;
+            }
+
+            if (observation->GetUnit(starport->add_on_tag) == nullptr) {
+                if (raxTech.empty()) {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_TECHLAB_STARPORT, starport->tag);
+                }
+                else {
+                    TryBuildRaxTech(ABILITY_ID::BUILD_REACTOR_STARPORT, starport->tag);
                 }
             }
         }
@@ -217,7 +261,6 @@ private:
             return false;
         }
 
-
         return TryBuildStructure(ABILITY_ID::BUILD_REFINERY);
     }
     const Unit* FindNearestVespeneGas(const Point2D& start) {
@@ -255,7 +298,7 @@ private:
     bool TryExpand(AbilityID build_ability, UnitTypeID worker_type) {
         const ObservationInterface* observation = Observation();
         Units bases = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
-        if (bases.size() > 3) {
+        if (bases.size() >= 2) {
             return false;
         }
         //Point3D staging_location_ = startLocation_;
@@ -278,6 +321,7 @@ private:
                 }
             }
         }
+        staging_location_ = closest_expansion;
         return TryBuildStructure(build_ability, worker_type, closest_expansion);
     }
 
@@ -295,25 +339,25 @@ private:
     }
 
     bool TryBuildFactory() {
-        if (CountUnitType(UNIT_TYPEID::TERRAN_FACTORY) > 1) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_FACTORY) >= 1) {
             return false;
         }
         return TryBuildStructure(ABILITY_ID::BUILD_FACTORY);
     }
     bool TryBuildStarPort() {
-        if (CountUnitType(UNIT_TYPEID::TERRAN_STARPORT) > 1) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_STARPORT) >= 1) {
             return false;
         }
         return TryBuildStructure(ABILITY_ID::BUILD_STARPORT);
     }
     bool TryBuildEngineerBay() {
-        if (CountUnitType(UNIT_TYPEID::TERRAN_ENGINEERINGBAY) > 1) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_ENGINEERINGBAY) >= 1) {
             return false;
         }
         return TryBuildStructure(ABILITY_ID::BUILD_ENGINEERINGBAY);
     }
     bool TryBuildArmory() {
-        if (CountUnitType(UNIT_TYPEID::TERRAN_ARMORY) > 1) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_ARMORY) >= 1) {
             return false;
         }
         return TryBuildStructure(ABILITY_ID::BUILD_ARMORY);
@@ -370,6 +414,52 @@ private:
     }
     bool TryBuildFactTech() {
         return TryBuildStructure(ABILITY_ID::BUILD_TECHLAB_FACTORY);
+    }
+
+    void delegateWorkers(UNIT_TYPEID worker_type, ABILITY_ID command, UNIT_TYPEID refinery) {
+        const ObservationInterface* observation = Observation();
+        Units bases = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+        Units geysers = observation->GetUnits(Unit::Alliance::Self, IsUnit(refinery));
+        Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(worker_type));
+        const Unit* closest_mineral_patch = nullptr;
+        if (bases.empty()) {
+            return;
+        }
+
+        for (const auto& base : bases) {
+            if (base->ideal_harvesters == 0 || base->build_progress != 1) {
+                continue;
+            }
+
+            for (const auto& geyser : geysers) {
+                if (geyser->assigned_harvesters < geyser->ideal_harvesters) {
+
+                    for (const auto& worker : workers) {
+                        if (!worker->orders.empty()) {
+                            if (worker->orders.front().target_unit_tag == base->tag)
+                            {
+                                Actions()->UnitCommand(worker, command, geyser);
+                                return;
+                            }
+                        }
+                    }
+
+                }
+
+                if (geyser->assigned_harvesters > geyser->ideal_harvesters) {
+                    closest_mineral_patch = FindNearestMineralPatch(base->pos);
+                    for (const auto& worker : workers) {
+                        if (!worker->orders.empty()) {
+                            if (worker->orders.front().target_unit_tag == geyser->tag)
+                            {
+                                Actions()->UnitCommand(worker, command, closest_mineral_patch);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 };
 
