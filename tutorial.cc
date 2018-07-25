@@ -29,6 +29,8 @@ public:
     Point3D startLocation_;
     Point3D staging_location_;
 
+    enum EActions {trainMarine, trainSCV, trainMedivac, trainMaurd, buildRax, buildCC, buildFact, buildStar, buildRef};
+
     virtual void OnGameStart() final {
         std::cout << "Game Started." << std::endl;
         expansions_ = search::CalculateExpansionLocations(Observation(), Query());
@@ -40,17 +42,54 @@ public:
         TryBuildSupplyDepot();
         TryBuildVespeneGas();
         TryBuildBarracks();
-        TryAddOn();
+        //TryAddOn();
         TryBuildFactory();
         TryBuildStarPort();
         TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-        TryBuildEngineerBay();
-        TryBuildArmory();
+        //TryBuildEngineerBay();
+        //TryBuildArmory();
         //TryBuildRaxReact();
         delegateWorkers(UNIT_TYPEID::TERRAN_SCV, ABILITY_ID::HARVEST_GATHER_SCV, UNIT_TYPEID::TERRAN_REFINERY);
     }
+    /**
+        got to figure out how to delegate these actions.. will either being passing a reference to a unit
+        or i will have another function that just calls this to set the action.
+    */
+    virtual void nextAction(EActions actions) {
+        switch (actions) {
+        case trainMarine: {
+            break;
+        }
+        case trainSCV: {
+            break;
+        }
+        case trainMaurd: {
+            break;
+        }
+        case trainMedivac: {
+            break;
+        }
+        case buildCC: {
+            break;
+        }
+        case buildRax: {
+            break;
+        }
+        case buildFact: {
+            break;
+        }
+        case buildStar: {
+            break;
+        }
+        case buildRef: {
+            break;
+        }
+        }
+
+    }
 
     virtual void OnUnitIdle(const Unit* unit) final {
+        const GameInfo& game_info = Observation()->GetGameInfo();
         switch (unit->unit_type.ToType()) {
         case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
             if (CountUnitType(UNIT_TYPEID::TERRAN_SCV) < 22) {
@@ -71,22 +110,24 @@ public:
         }
         case UNIT_TYPEID::TERRAN_BARRACKS: {
             TryAddOn();
-            Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) < 16) {
+                Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+            }
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARAUDER) < 5) {
+                Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARAUDER);
+            }
             break;
         }
         case UNIT_TYPEID::TERRAN_MARINE: {
-            float rx = GetRandomScalar();
-            float ry = GetRandomScalar();
 
-            const GameInfo& game_info = Observation()->GetGameInfo();
             Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
-            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) > 50) {
-                Actions()->UnitCommand(unit, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) == 15) {
+                Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, game_info.enemy_start_locations.front());
             }
             break;
         }
         case UNIT_TYPEID::TERRAN_STARPORT: {
-            if (CountUnitType(UNIT_TYPEID::TERRAN_MEDIVAC) >= 5) {
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MEDIVAC) >= 4) {
                 break;
             }
             TryAddOn();
@@ -95,24 +136,37 @@ public:
         }
         case UNIT_TYPEID::TERRAN_MEDIVAC: {
             Actions()->UnitCommand(unit, ABILITY_ID::MOVE, staging_location_);
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) == 15) {
+                Actions()->UnitCommand(unit, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
+            }
             break;
         }
         case UNIT_TYPEID::TERRAN_FACTORY: {
-            if (CountUnitType(UNIT_TYPEID::TERRAN_SIEGETANK) >= 5) {
-                break;
-            }
-            TryAddOn();
-            Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SIEGETANK);
-            break;
+            //if (CountUnitType(UNIT_TYPEID::TERRAN_SIEGETANK) >= 5) {
+              //  break;
+           // }
+           // TryAddOn();
+            //Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SIEGETANK);
+           // break;
         }
         case UNIT_TYPEID::TERRAN_SIEGETANK: {
             Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
+            break;
+        }
+        case UNIT_TYPEID::TERRAN_MARAUDER: {
+            Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
+            if (CountUnitType(UNIT_TYPEID::TERRAN_MARINE) == 15) {
+                Actions()->UnitCommand(unit, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
+            }
+
             break;
         }
         default: {
             break;
         }
         }
+
+
     }
 
 private:
@@ -253,7 +307,10 @@ private:
             return false;
 
         // Try and build a depot. Find a random SCV and give it the order.
-        return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT);
+        if (observation->GetFoodUsed() >= observation->GetFoodCap() * .75) {
+            return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT);
+        }
+        return false;
     }
     bool TryBuildVespeneGas() {
 
@@ -321,7 +378,10 @@ private:
                 }
             }
         }
-        staging_location_ = closest_expansion;
+        if (bases.size() <= 1) {
+            staging_location_ = closest_expansion;
+        }
+        
         return TryBuildStructure(build_ability, worker_type, closest_expansion);
     }
 
@@ -331,7 +391,7 @@ private:
             return false;
         }
 
-        if (CountUnitType(UNIT_TYPEID::TERRAN_BARRACKS) > 2) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_BARRACKS) > 1) {
             return false;
         }
 
@@ -339,7 +399,7 @@ private:
     }
 
     bool TryBuildFactory() {
-        if (CountUnitType(UNIT_TYPEID::TERRAN_FACTORY) >= 1) {
+        if (CountUnitType(UNIT_TYPEID::TERRAN_FACTORY) > 1) {
             return false;
         }
         return TryBuildStructure(ABILITY_ID::BUILD_FACTORY);
