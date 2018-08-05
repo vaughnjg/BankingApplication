@@ -42,13 +42,12 @@ public:
         TryBuildSupplyDepot();
         TryBuildVespeneGas();
         TryBuildBarracks();
-        //TryAddOn();
+        TryAddOn();
         TryBuildFactory();
         TryBuildStarPort();
-        TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-        //TryBuildEngineerBay();
-        //TryBuildArmory();
-        //TryBuildRaxReact();
+        TryBuildEngineerBay();
+        TryBuildArmory();
+        TryBuildRaxReact();
         delegateWorkers(UNIT_TYPEID::TERRAN_SCV, ABILITY_ID::HARVEST_GATHER_SCV, UNIT_TYPEID::TERRAN_REFINERY);
     }
     /**
@@ -56,32 +55,70 @@ public:
         or i will have another function that just calls this to set the action.
     */
     virtual void nextAction(EActions actions) {
+
+        const ObservationInterface* observation = Observation();
+
+        Units bases = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+        Units barracks = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKS));
+        Units factorys = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORY));
+        Units starports = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORT));
+        Units scvs = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SCV));
+        const Unit* unit_to_build = nullptr;
+
+        for (const auto& scv : scvs) {
+            if (scv->orders.empty()){
+                unit_to_build = scv;
+                continue;
+            }
+        }
+
+        for (const auto* base : bases) {
+            if (base->orders.empty()) {
+                Actions()->UnitCommand(base, ABILITY_ID::TRAIN_SCV);
+            }
+        }
+
         switch (actions) {
         case trainMarine: {
+            Actions()->UnitCommand(unit_to_build, ABILITY_ID::TRAIN_MARINE);
             break;
         }
         case trainSCV: {
+            /**
+            for (const auto* base : bases) {
+                if (base->orders.empty()) {
+                    Actions()->UnitCommand(base, ABILITY_ID::TRAIN_SCV);
+                }
+            }
+            */
             break;
         }
         case trainMaurd: {
+            Actions()->UnitCommand(unit_to_build, ABILITY_ID::TRAIN_MARAUDER);
             break;
         }
         case trainMedivac: {
+            Actions()->UnitCommand(unit_to_build, ABILITY_ID::TRAIN_MEDIVAC);
             break;
         }
         case buildCC: {
+            TryBuildCC();
             break;
         }
         case buildRax: {
+            TryBuildBarracks();
             break;
         }
         case buildFact: {
+            TryBuildFactory();
             break;
         }
         case buildStar: {
+            TryBuildStarPort();
             break;
         }
         case buildRef: {
+            TryBuildVespeneGas();
             break;
         }
         }
@@ -142,12 +179,12 @@ public:
             break;
         }
         case UNIT_TYPEID::TERRAN_FACTORY: {
-            //if (CountUnitType(UNIT_TYPEID::TERRAN_SIEGETANK) >= 5) {
-              //  break;
-           // }
-           // TryAddOn();
-            //Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SIEGETANK);
-           // break;
+            if (CountUnitType(UNIT_TYPEID::TERRAN_SIEGETANK) >= 5) {
+                break;
+           }
+            TryAddOn();
+           Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SIEGETANK);
+            break;
         }
         case UNIT_TYPEID::TERRAN_SIEGETANK: {
             Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, staging_location_);
